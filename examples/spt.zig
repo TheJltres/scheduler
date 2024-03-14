@@ -28,7 +28,7 @@ pub fn main() !void {
 
     // TODO: Implement custom method?
     std.sort.block(Job, &jobs, {}, cmpByTime);
-    std.debug.print("\nSPT firs sorted:\n", .{});
+    std.debug.print("\nSPT first sorted:\n", .{});
     show_jobs(&jobs);
 }
 
