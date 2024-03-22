@@ -10,24 +10,18 @@ pub fn main() !void {
 
     var rnd = std.crypto.random;
     const jobs_count = 10;
-    var jobs = init: {
-        // Fill array at comptime
-        var initial_value: [jobs_count]Job = undefined;
-        for (&initial_value, 0..) |*pt, i| {
-            pt.* = Job{
-                .id = @intCast(i),
-                .time = rnd.int(u8),
-            };
-        }
-
-        break :init initial_value;
-    };
+    var jobs: [jobs_count]Job = undefined;
+    for (&jobs, 0..) |*pt, i| {
+        pt.* = Job{
+            .id = @intCast(i),
+            .time = rnd.int(u8),
+        };
+    }
 
     std.debug.print("List of jobs:\n", .{});
     show_jobs(&jobs);
 
-    // TODO: Implement custom method?
-    std.sort.block(Job, &jobs, {}, cmpByTime);
+    std.sort.heap(Job, &jobs, {}, cmpByTime);
     std.debug.print("\nSPT first sorted:\n", .{});
     show_jobs(&jobs);
 }
