@@ -16,7 +16,7 @@ pub fn main() !void {
         pt.* = Job{
             .id = @intCast(i),
             .time = rnd.int(u8),
-            .weight = rnd.int(u8),
+            .weight = rnd.intRangeAtMost(u8, 1, std.math.maxInt(u8)),
         };
     }
 
@@ -29,7 +29,7 @@ pub fn main() !void {
 }
 
 fn cmpByWeight(context: void, a: Job, b: Job) bool {
-    return std.sort.asc(u8)(context, a.time / a.weight, b.time / a.weight);
+    return std.sort.asc(u8)(context, a.time / a.weight, b.time / b.weight);
 }
 
 fn show_jobs(jobs: []const Job) void {
