@@ -94,7 +94,6 @@ const Solver = struct {
             // Assert we are comparing different jobs
             // Assert current job is not overlapping solution
             if (value.job.id != job.id and
-                // value.start < curr_time + job.time and
                 value.start + value.job.time > curr_time)
             {
                 return false;
