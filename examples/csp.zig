@@ -44,10 +44,10 @@ const JobSolved = struct {
 
 const Solver = struct {
     total_time: usize,
-    jobs: []const Job,
+    jobs: []Job,
     solution: []JobSolved,
 
-    pub fn init(total_time: usize, jobs: []const Job, solved: []JobSolved) Solver {
+    pub fn init(total_time: usize, jobs: []Job, solved: []JobSolved) Solver {
         return .{
             .total_time = total_time,
             .jobs = jobs,
@@ -56,7 +56,12 @@ const Solver = struct {
     }
 
     pub fn solve(self: Solver) bool {
+        std.sort.heap(Job, self.jobs, {}, cmpByTime);
         return self.backtrack(0, 0);
+    }
+
+    fn cmpByTime(context: void, a: Job, b: Job) bool {
+        return std.sort.asc(u8)(context, a.time, b.time);
     }
 
     fn backtrack(self: Solver, curr_job: u8, curr_sol: usize) bool {
@@ -64,9 +69,14 @@ const Solver = struct {
             return true;
         }
 
-        for (0..self.total_time) |curr_time| {
+        var sum: usize = 0;
+        for (0..curr_sol) |i| {
+            sum += self.solution[i].job.time;
+        }
+
+        for (sum..self.total_time) |curr_time| {
             const job = &self.jobs[curr_job];
-            if (!consistent(self, job, curr_sol, curr_time)) {
+            if (!self.consistent(job, curr_sol, curr_time)) {
                 continue;
             }
 
@@ -86,16 +96,18 @@ const Solver = struct {
 
     fn consistent(self: Solver, job: *const Job, curr_sol: usize, curr_time: usize) bool {
         for (self.solution[0..curr_sol]) |value| {
+            // Assert we are comparing different jobs
+            if (value.job.id == job.id) {
+                continue;
+            }
+
             // Assert new job will no overflow
             if (curr_time + job.time > self.total_time) {
                 return false;
             }
 
-            // Assert we are comparing different jobs
             // Assert current job is not overlapping solution
-            if (value.job.id != job.id and
-                value.start + value.job.time > curr_time)
-            {
+            if (value.start + value.job.time > curr_time) {
                 return false;
             }
         }

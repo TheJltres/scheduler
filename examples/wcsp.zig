@@ -71,9 +71,14 @@ const Solver = struct {
             return true;
         }
 
-        for (0..self.total_time) |curr_time| {
+        var sum: usize = 0;
+        for (0..curr_sol) |i| {
+            sum += self.solution[i].job.time;
+        }
+
+        for (sum..self.total_time) |curr_time| {
             const job = &self.jobs[curr_job];
-            if (!consistent(self, job, curr_sol, curr_time)) {
+            if (!self.consistent(job, curr_sol, curr_time)) {
                 continue;
             }
 
@@ -93,20 +98,21 @@ const Solver = struct {
 
     fn consistent(self: Solver, job: *const Job, curr_sol: usize, curr_time: usize) bool {
         for (self.solution[0..curr_sol]) |value| {
-            // Assert new job will no overflow
-            if (curr_time + job.time > self.total_time) {
-                return false;
-            }
-
             // Assert we are comparing different jobs
             if (value.job.id == job.id) {
                 continue;
+            }
+
+            // Assert new job will no overflow
+            if (curr_time + job.time > self.total_time) {
+                return false;
             }
 
             // Assert job weight is sorted
             if (value.job.time / value.job.weight > job.time / job.weight) {
                 return false;
             }
+
             // Assert current job is not overlapping solution
             if (value.start + value.job.time > curr_time) {
                 return false;
