@@ -3,6 +3,7 @@ const std = @import("std");
 const Job = struct {
     id: u8,
     time: u8,
+    start: usize,
 };
 
 pub fn main() !void {
@@ -15,6 +16,7 @@ pub fn main() !void {
         pt.* = Job{
             .id = @intCast(i),
             .time = rnd.intRangeLessThan(u8, 1, 100),
+            .start = 0,
         };
     }
 
@@ -22,12 +24,11 @@ pub fn main() !void {
     show_jobs(&jobs);
 
     const time_slots = std.math.maxInt(u8);
-    var solution: [jobs_count]JobSolved = undefined;
-    const solver = Solver.init(time_slots, &jobs, &solution);
+    const solver = Solver.init(time_slots, &jobs);
     std.debug.print("Searching solution... {d} time slots: \n", .{time_slots});
     if (solver.solve()) {
         std.debug.print("Solution found: \n", .{});
-        show_jobs_solved(&solution);
+        show_jobs(&jobs);
     } else {
         var sum: usize = 0;
         for (&jobs) |*pt| {
@@ -37,80 +38,67 @@ pub fn main() !void {
     }
 }
 
-const JobSolved = struct {
-    job: *const Job,
-    start: usize,
-};
-
 const Solver = struct {
     total_time: usize,
     jobs: []Job,
-    solution: []JobSolved,
 
-    pub fn init(total_time: usize, jobs: []Job, solved: []JobSolved) Solver {
+    pub fn init(total_time: usize, jobs: []Job) Solver {
         return .{
             .total_time = total_time,
             .jobs = jobs,
-            .solution = solved,
         };
     }
 
     pub fn solve(self: Solver) bool {
-        std.sort.heap(Job, self.jobs, {}, cmpByTime);
-        return self.backtrack(0, 0);
+        return self.backtrack(0);
     }
 
-    fn cmpByTime(context: void, a: Job, b: Job) bool {
-        return std.sort.asc(u8)(context, a.time, b.time);
-    }
-
-    fn backtrack(self: Solver, curr_job: u8, curr_sol: usize) bool {
-        if (curr_job == self.jobs.len) {
-            return true;
+    fn backtrack(self: Solver, curr: usize) bool {
+        if (curr == self.jobs.len) {
+            return self.consistent();
         }
 
-        var sum: usize = 0;
-        for (0..curr_sol) |i| {
-            sum += self.solution[i].job.time;
-        }
-
-        for (sum..self.total_time) |curr_time| {
-            const job = &self.jobs[curr_job];
-            if (!self.consistent(job, curr_sol, curr_time)) {
-                continue;
-            }
-
-            self.solution[curr_sol] = JobSolved{
-                .job = job,
-                .start = curr_time,
-            };
-            if (self.backtrack(curr_job + 1, curr_sol + 1)) {
+        for (curr..self.jobs.len) |i| {
+            std.mem.swap(Job, &self.jobs[curr], &self.jobs[i]);
+            if (self.backtrack(curr + 1)) {
                 return true;
             }
 
-            self.solution[curr_sol] = undefined;
+            std.mem.swap(Job, &self.jobs[curr], &self.jobs[i]);
         }
 
         return false;
     }
 
-    fn consistent(self: Solver, job: *const Job, curr_sol: usize, curr_time: usize) bool {
-        for (self.solution[0..curr_sol]) |value| {
-            // Assert we are comparing different jobs
-            if (value.job.id == job.id) {
-                continue;
-            }
-
-            // Assert new job will no overflow
-            if (curr_time + job.time > self.total_time) {
+    fn consistent(self: Solver) bool {
+        var time: usize = 0;
+        for (0..self.jobs.len - 1) |i| {
+            const item = self.jobs[i];
+            // Font allow to schedule first item until time 50 or last
+            if (i != self.jobs.len - 1 and item.id == 0 and time < 50) {
                 return false;
             }
 
-            // Assert current job is not overlapping solution
-            if (value.start + value.job.time > curr_time) {
+            const next = self.jobs[i + 1];
+            // Assert job time is sorted
+            if (item.time > next.time) {
                 return false;
             }
+
+            // Don't allow schedule at time between 5 and 9
+            if ((time < 5 and time + item.time > 5) or (time >= 5 and time < 10)) {
+                time = 10;
+            }
+
+            self.jobs[i].start = time;
+            time += item.time;
         }
+
+        if (time > self.total_time) {
+            return false;
+        }
+
+        self.jobs[self.jobs.len - 1].start = time;
 
         return true;
     }
@@ -118,12 +106,6 @@ const Solver = struct {
 
 fn show_jobs(jobs: []const Job) void {
     for (jobs) |value| {
-        std.debug.print("Job {d} {d}\n", .{ value.id, value.time });
-    }
-}
-
-fn show_jobs_solved(jobs: []const JobSolved) void {
-    for (jobs) |value| {
-        std.debug.print("Job {d} {d} {d}\n", .{ value.job.id, value.job.time, value.start });
+        std.debug.print("Job {d} {d} {d}\n", .{ value.id, value.time, value.start });
     }
 }
