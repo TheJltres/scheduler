@@ -1,8 +1,10 @@
 ### zig ###
 # Zig programming language
-
 zig-cache/
 zig-out/
+
+# Common
+.cache/
 build/
 build-*/
 docgen_tmp/
