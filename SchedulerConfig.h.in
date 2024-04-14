@@ -1,0 +1,3 @@
+#define Scheduler_VERSION @scheduler_VERSION@
+
+include("${CMAKE_CURRENT_LIST_DIR}/CMakeORToolsTargets.cmake")
