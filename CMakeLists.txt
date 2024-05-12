@@ -2,33 +2,26 @@ cmake_minimum_required(VERSION 3.14)
 project(scheduler VERSION 0.1 LANGUAGES CXX)
 message(STATUS "${PROJECT_NAME} version: ${PROJECT_VERSION}")
 
+set(EXECUTABLE_OUTPUT_PATH bin)
 set(ALLOW_DUPLICATE_CUSTOM_TARGETS ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_MODULES ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-
-# Set max os target version.
-set(CMAKE_OSX_DEPLOYMENT_TARGET 10.15)
 
 include(GNUInstallDirs)
 include(CTest)
 include(FetchContent)
 
-# Layout build dir like install dir
-if(UNIX)
-    option(BUILD_SHARED_LIBS "Build shared libraries (.so or .dylib)." ON)
-    set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR})
-    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR})
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR})
-else()
-  # Currently Only support static build for windows
-    option(BUILD_SHARED_LIBS "Build shared libraries (.dll)." OFF)
-    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR})
-    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR})
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR})
-endif()
+option(BUILD_SHARED_LIBS "Build shared libraries (.so or .dylib)." ON)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR})
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR})
+
+set(CMAKE_C_FLAGS_RELEASE "-Wall -O3")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fvisibility=hidden")
 
 if(UNIX)
     option(BUILD_SHARED_LIBS "Build shared libraries(.so)." ON)
@@ -87,18 +80,21 @@ target_include_directories(${PROJECT_NAME} PUBLIC "${PROJECT_BINARY_DIR}")
 
 target_sources(${PROJECT_NAME} PRIVATE "src/main.cc")
 
-target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_include_directories(${PROJECT_NAME} BEFORE PRIVATE ${PROJECT_SOURCE_DIR}/google/src)
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_11)
 set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${PROJECT_VERSION})
 
 # Include Argh
-target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_BINARY_DIR}/_deps/argh-src")
+target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_BINARY_DIR}/_deps/argh-src")
 
 # Include mINI
-target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_BINARY_DIR}/_deps/mini-src/src")
+target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_BINARY_DIR}/_deps/mini-src/src/mini")
+
+# Include libastro
+target_link_libraries(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/libastro/libastro.a")
 
 # Include ortools
-target_link_libraries(${PROJECT_NAME} PRIVATE ortools::ortools)
+target_link_libraries(${PROJECT_NAME} PUBLIC ortools::ortools)
 
 if(APPLE)
   set_target_properties(${PROJECT_NAME} PROPERTIES INSTALL_RPATH
@@ -110,6 +106,7 @@ elseif(UNIX)
   set_target_properties(${PROJECT_NAME} PROPERTIES
     INSTALL_RPATH "$ORIGIN/${libdir_relative_path}")
 endif()
+
 add_executable(Scheduler::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 
 # Install
@@ -118,3 +115,5 @@ install(
     EXPORT ${PROJECT_NAME}Targets
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+message("Scheduler build!")
