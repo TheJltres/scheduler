@@ -1,0 +1,57 @@
+.\" Manpage for scheduler.
+.\" Visit https://github.com/TheJltres/scheduler to correct errors or typos.
+.TH man 8 "2 May 2024" "0.1" "scheduler man page"
+
+.SH Scheduler
+Scheduler \- Schedule observation of abstral objects.
+
+.SH SYNOPSIS
+scheduler \fB--telescope\fR=\fIconfig_path\fR
+\fB--import-objects\fR=\fIobjects_path\fR [\fB--date\fR=\fIvalue\fR]
+[\fB--help\fR] [\fB--version\fR] [\fB--verbose\fR]
+
+.SH DESCRIPTION
+This projects aims to provie an efficient management of astronomical
+observations, facilitating the allocation of a single telescope time and
+resources for each object in the observation.
+.SH OPTIONS
+.TP
+\fB-t, --telescope\fR \fIconfig_path\fR
+Path or name of the telescope configuration file. This parameter is required.
+Default path is set in $SCHEDULER_CONFIG (default value ~/.config/scheduler/).
+
+.TP
+\fB-i, --import-objects\fR \fIobjects_path\fR
+Path of the file with all the objects to observate and their coordenates. This
+parameter is required.
+
+.TP
+\fB--date\fR \fIdate\fR
+Date to perform the observation. It must be provided in this form: dd/MM/yyyy.
+
+.TP
+\fB--verbose\fR
+Display all aplication logs.
+
+.TP
+\fB--help\fR
+Get Scheduler help menu. It shows all information about the Scheduler. This
+parameter will override all the others.
+
+.TP
+\fB--version\fR
+Get the version of the executable. This parameter will override all the others.
+
+.SH EXAMPLES
+Runs the program with the telescope configuration file from \fIconfig\fR,
+objects to observe from \fIobjects\fR file, the observation date is set as April
+18, 2024, and displays all logs.
+
+\fBscheduler -t config -i objects --date 2024-04-18 --verbose\fR
+
+.SH BUGS
+https://github.com/TheJltres/scheduler/issues
+
+.SH AUTHOR
+Jose Luis Tresserras Merino (TheJltres)
+
