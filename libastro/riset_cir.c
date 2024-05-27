@@ -305,7 +305,9 @@ Obj *op)	/* working object -- returns as answer */
 	    a0 = a1;
 
 	    if (++npasses > MAXPASSES || fabs(dt) >= MAXSTEP)
-		return (-3);
+        {
+            return (-3);
+        }
 
 	} while (fabs(dt)>TMACC);
 	// fprintf (stderr, "%s 0alt npasses = %d\n", op->o_name, npasses);
