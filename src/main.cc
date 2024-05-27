@@ -1,6 +1,8 @@
 #include <absl/base/log_severity.h>
 #include <absl/log/globals.h>
 #include <absl/log/log.h>
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
@@ -17,6 +19,7 @@
 #include <map>
 #include <string>
 #include <tuple>
+#include <unistd.h>
 #include <vector>
 
 #include "absl/strings/str_format.h"
@@ -30,11 +33,8 @@ extern "C" {
 #include "ortools/sat/cp_model.pb.h"
 #include "ortools/sat/cp_model_solver.h"
 
-#include "./model/angle.cc"
 #include "./model/object.cc"
 #include "./model/telescope.cc"
-
-const int MAX_TIME = 480;
 
 void Schedule(double julian_date, std::vector<Telescope> telescopes,
               std::vector<Object> objects) {
@@ -43,48 +43,77 @@ void Schedule(double julian_date, std::vector<Telescope> telescopes,
 
     CpModelBuilder model;
 
+    std::sort(objects.begin(), objects.end());
+
     std::map<std::tuple<int, int>, IntVar> assigned;
     std::vector<BoolVar> scheduler;
     std::vector<IntervalVar> intervals;
     for (Telescope telescope : telescopes) {
-        IntVar makespan =
-            model.NewIntVar({0, telescope.GetObservationTime()})
-                .WithName(absl::StrFormat("makespan_%d", telescope.GetId()));
+        Now now;
+        now.n_mjd = julian_date;
+        now.n_lat = telescope.GetLatitude() * PI / 180;
+        now.n_lng = telescope.GetLongitude() * PI / 180;
+        now.n_elev = telescope.GetAltitude();
+        now.n_temp = 15;
+        now.n_dip = now.n_tz = 0;
+        now.n_pressure = 1010;
+        now.n_epoch = J2000;
 
+        double julian_twilight_dawn;
+        double julian_twilight_dusk;
+        int status;
+        twilight_cir(&now, -17.5 * PI / 180, &julian_twilight_dawn,
+                     &julian_twilight_dusk, &status);
+
+        int total_observation_time =
+            trunc((julian_twilight_dusk - julian_twilight_dawn) * 60 * 24);
+
+        std::cout << julian_twilight_dawn << std::endl;
+        std::cout << julian_twilight_dusk << std::endl;
+        std::cout << total_observation_time << std::endl;
+
+        IntVar makespan =
+            model.NewIntVar({0, total_observation_time})
+                .WithName(absl::StrFormat("makespan_%d", telescope.GetId()));
         std::vector<IntVar> ends;
         std::vector<BoolVar> restrictions_global;
         for (Object object : objects) {
-            auto object_start = 0;
-            auto time = julian_date;
-            while (object_start < MAX_TIME &&
+            int visible_start = 0;
+            auto time = julian_twilight_dusk;
+            while (visible_start < total_observation_time &&
                    !telescope.IsObjectVisible(time, object)) {
-                object_start++;
+                visible_start++;
 
                 time += ((double)1 / (24 * 60));
             }
 
-            if (object_start == MAX_TIME) {
-                break;
+            if (visible_start == total_observation_time) {
+                continue;
             }
 
-            auto object_end = object_start;
-            while (object_end < MAX_TIME && telescope.IsObjectVisible(time, object)) {
-                object_end++;
+            auto visible_end = visible_start;
+            while (visible_end < total_observation_time &&
+                   telescope.IsObjectVisible(time, object)) {
+                visible_end++;
+
                 time += ((double)1 / (24 * 60));
             }
 
-            if (object_end - object_start < object.GetObservationTime()) {
-                break;
+            if (visible_end - visible_start < object.GetObservationTime()) {
+                continue;
             }
 
-            std::cout << "Object added: " << object_start << " - " << object_end << " | ";
-            std::cout << object.GetObservationTime() << " - " << object_end << std::endl;
+            std::cout << "Object added: " << telescope.GetId() << " - "
+                      << object.GetId() << " - " << visible_start << " - "
+                      << visible_end << " - " << object.GetObservationTime()
+                      << std::endl;
 
             std::string suffix =
                 absl::StrFormat("_%d_%d", object.GetId(), telescope.GetId());
-            IntVar start = model.NewIntVar({0, telescope.GetObservationTime()})
-                               .WithName(std::string("object_start") + suffix);
-            IntVar end = model.NewIntVar({0, telescope.GetObservationTime()})
+            IntVar start =
+                model.NewIntVar({visible_start, visible_end})
+                    .WithName(std::string("twilight_start") + suffix);
+            IntVar end = model.NewIntVar({visible_start, visible_end})
                              .WithName(std::string("object_end") + suffix);
             IntervalVar interval =
                 model.NewIntervalVar(start, object.GetObservationTime(), end)
@@ -114,23 +143,21 @@ void Schedule(double julian_date, std::vector<Telescope> telescopes,
         std::cout << "Solution found:" << std::endl;
 
         std::map<std::tuple<int, int>, int64_t> scheduled;
-        for (Telescope t : telescopes) {
-            for (Object j : objects) {
-                auto key = std::make_tuple(t.GetId(), j.GetId());
-                auto val = SolutionIntegerValue(response, assigned[key]);
-                scheduled[key] = val;
-            }
+        for (auto item : assigned) {
+            auto val = SolutionIntegerValue(response, item.second);
+            scheduled[item.first] = val;
         }
 
         for (const auto value : scheduled) {
             auto job_id = std::get<1>(value.first);
-            auto object = std::find_if(objects.begin(), objects.end(), [&job_id](const Object& obj) {return obj.GetId() == job_id;});
+            auto object = std::find_if(
+                objects.begin(), objects.end(),
+                [&job_id](const Object &obj) { return obj.GetId() == job_id; });
             std::cout << "Telescope: " << std::get<0>(value.first)
                       << " Job: " << job_id << " Starts at: " << value.second
                       << " until "
-                      << value.second + object->GetObservationTime()
-                      << " - " << object->GetObservationTime()
-                      << std::endl;
+                      << value.second + object->GetObservationTime() << " - "
+                      << object->GetObservationTime() << std::endl;
         }
 
         std::cout << "Optimal Schedule Length: " << response.objective_value()
@@ -187,74 +214,6 @@ void print_help() {
     std::cout << "For more information, you can take a look at \"man "
                  "./docs/scheduler\""
               << std::endl;
-}
-
-void custom_test(double time, Telescope &telescope, Object &obj) {
-    obj.Print();
-
-    double moon_lat, moon_lon, moon_rho, moon_msp, moon_mdp;
-    for (int i = 0; i < 60; i++) {
-        std::cout << "Time: " << time + ((double)i / 24) << std::endl;
-
-        // He de saber:
-        //   - Posición de la luna
-        //   - La posición del objeto
-        //   - Mi ángulo visible
-
-        // Primer test:
-        // Mirar si el objeto está a + o - de 45º de radio de la luna
-        // Pillar la info de la configuración del telescopio.
-        moon(time + ((double)i / 24), &moon_lat, &moon_lon, &moon_rho,
-             &moon_msp, &moon_mdp);
-
-        auto separation =
-            Angle::separation(moon_lat, moon_lon, obj.GetDec(), obj.GetRa());
-        std::cout << "Separación: "
-                  << separation.GetRadians() * separation.GetFactor()
-                  << std::endl;
-
-        // Test 2: este objeto es visible según mi rango de visión
-        // Mi punto más alto es la RA y DEC del telescopio
-        // Vamos a aplicar la configuración del telescopio para realizar las
-        // obsevaciones.
-        // 30º con respecto al horizonte
-        // 90 - 30 en cada dirección de la declinación
-        double diff_lat = telescope.GetLatitude() - obj.GetDec();
-        double diff_lon = telescope.GetLongitude() - obj.GetRa();
-
-        double lst;
-        Now now;
-        now.n_mjd = time + ((double)i / 24);
-        now.n_lat = telescope.GetLatitude();
-        now.n_lng = telescope.GetLongitude();
-        now.n_temp = 15;
-        now.n_dip = now.n_elev = now.n_tz = 0;
-        now.n_pressure = 1010;
-        now.n_epoch = J2000;
-
-        now_lst(&now, &lst);
-        auto lst_ra = lst - obj.GetRa();
-        if (lst_ra < 4.3 || 24.0 - lst_ra < 4.3) {
-            std::cout << "RA Is correct" << std::endl;
-        }
-
-        // Test 3: El objeto es visible con su DEC
-        // Cuál es mi DEC? La tierra va girando
-        // Preguntar
-        if (obj.GetDec() < 63.0 && obj.GetDec() > -35.0) {
-            std::cout << "DEC Is correct" << std::endl;
-        }
-
-        std::cout << "Telescope:" << std::endl;
-        std::cout << "  LST: " << lst << std::endl;
-        std::cout << "  Diff LST: " << lst_ra << std::endl;
-        std::cout << "Diff:" << std::endl;
-        std::cout << "  RA: " << obj.GetRa() << std::endl;
-        std::cout << "  DEC: " << obj.GetDec() << std::endl;
-        std::cout << std::endl;
-
-        std::cin.ignore();
-    }
 }
 
 int main(int argc, char *argv[]) {
@@ -339,24 +298,84 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    double latitude, longitude, altitude;
-    std::stringstream iss(ini["observatory"]["latitude"]);
-    if (!(iss >> latitude)) {
+    double latitude, longitude;
+    int altitude;
+    std::stringstream ini_latitude(ini["observatory"]["latitude"]);
+    if (!(ini_latitude >> latitude)) {
         std::cout << "ERR: Telescope config: Observatory: Latitude field was "
                      "not valid"
                   << std::endl;
         return EXIT_FAILURE;
     }
-    std::stringstream test(ini["observatory"]["longitude"]);
-    if (!(test >> longitude)) {
+
+    std::stringstream ini_longitude(ini["observatory"]["longitude"]);
+    if (!(ini_longitude >> longitude)) {
         std::cout << "ERR: Telescope config: Observatory: Longitude field was "
                      "not valid"
                   << std::endl;
         return EXIT_FAILURE;
     }
+
+    std::stringstream ini_altitude(ini["observatory"]["altitude"]);
+    if (!(ini_altitude >> altitude)) {
+        std::cout << "ERR: Telescope config: Observatory: Altitude field was "
+                     "not valid"
+                  << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    double min_height, min_lunar_dist, min_dec_N, min_dec_S, mount_HA;
+    std::stringstream ini_limit_min_height(ini["limits"]["min_height"]);
+    if (!(ini_limit_min_height >> min_height)) {
+        std::cout << "ERR: Telescope config: Observatory: Min height field was "
+                     "not valid"
+                  << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    std::stringstream init_limit_min_lunar_dist(
+        ini["limits"]["min_lunar_dist"]);
+    if (!(init_limit_min_lunar_dist >> min_lunar_dist)) {
+        std::cout
+            << "ERR: Telescope config: Observatory: Min lunar dist field was "
+               "not valid"
+            << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    std::stringstream ini_limit_dec_N(ini["limits"]["min_dec_N"]);
+    if (!(ini_limit_dec_N >> min_dec_N)) {
+        std::cout << "ERR: Telescope config: Observatory: Min dec N field was "
+                     "not valid"
+                  << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    std::stringstream ini_limit_min_dec_S(ini["limits"]["min_dec_S"]);
+    if (!(ini_limit_min_dec_S >> min_dec_S)) {
+        std::cout << "ERR: Telescope config: Observatory: Min dec S field was "
+                     "not valid"
+                  << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    std::stringstream ini_limit_mount_ha(ini["limits"]["mount_HA"]);
+    if (!(ini_limit_mount_ha >> mount_HA)) {
+        std::cout << "ERR: Telescope config: Observatory: Min height field was "
+                     "not valid"
+                  << std::endl;
+        return EXIT_FAILURE;
+    }
+
     std::cout << "Telescope" << std::endl;
-    auto telescope = Telescope(1, latitude, longitude);
-    telescope.Print();
+    auto telescope = Telescope(1, latitude, longitude, altitude, "Test",
+                               {
+                                   min_height,
+                                   min_lunar_dist,
+                                   min_dec_N,
+                                   min_dec_S,
+                                   mount_HA,
+                               });
 
     time_t custom_date{};
     if (cmdl({"-d", "--date"})) {
@@ -375,6 +394,7 @@ int main(int argc, char *argv[]) {
               << today->tm_min << std::endl;
 
     double mjdp;
+    double m;
     cal_mjd(today->tm_mon, today->tm_mday, today->tm_year + 1900, &mjdp);
     mjdp += today->tm_hour / 24.;
     mjdp += today->tm_min / (24. * 60.);
@@ -382,16 +402,6 @@ int main(int argc, char *argv[]) {
 
     std::cout << "Julian Date: " << mjdp << std::endl;
 
-    std::cout << std::endl;
-    double lam, bet, rho, msp, mdp;
-    moon(mjdp, &lam, &bet, &rho, &msp, &mdp);
-
-    // ??? qué son estos?
-    // std::cout << rho << std::endl;
-    // std::cout << msp << std::endl;
-    // std::cout << mdp << std::endl;
-
-    std::cout << std::endl;
     std::vector<Object> objects;
     std::ifstream ObjectsFile(objects_file);
     std::string buf;
@@ -408,13 +418,9 @@ int main(int argc, char *argv[]) {
                    std::stof(dec_items.at(1)) / 60 +
                    std::stof(dec_items.at(2)) / 3600;
 
-        int rand_time = rand() % 100;
-        objects.push_back(Object(id, ra, dec, rand_time, rand() % 100));
+        int priority = rand() % 100;
+        objects.push_back(Object(id, ra, dec, priority, rand() % 60));
     }
-
-    // custom_test(mjdp, telescope, objects[0]);
-
-    // return EXIT_SUCCESS;
 
     std::vector<Telescope> telescopes;
     telescopes.push_back(telescope);
